@@ -5,6 +5,7 @@ import jwt
 from pwdlib import PasswordHash
 from fastapi import FastAPI, Depends, HTTPException, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select, text, func
 from sqlalchemy.exc import IntegrityError
@@ -14,15 +15,28 @@ from .schemas import Register, Login, OrgIn, OrgOut, ProjectIn, ProjectPatch, Of
 from .matching import committed, delivered, rank, plan
 from .schemas import UserOut, ProjectOut, RequirementOut, PartnershipOut, MatchOut, PlanRow
 
-app = FastAPI(title='ImpactLink API', version='1.0.0', description='Resource coordination prototype. Demo data is fictional. Funding records are pledges, not payments.')
+app = FastAPI(title='ImpactLink API', version='1.0.0', description='Resource coordination prototype. Demo data is fictional. Funding records are pledges, not payments.', docs_url=None)
 origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
+vercel_url = os.getenv('VERCEL_URL')
+if vercel_url:
+    origins.append(f'https://{vercel_url}')
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=['GET','POST','PATCH','PUT','DELETE'], allow_headers=['Content-Type','Authorization'])
-SECRET = os.getenv('JWT_SECRET') or secrets.token_urlsafe(48)
+SECRET = os.getenv('JWT_SECRET')
+if not SECRET:
+    if os.getenv('VERCEL'):
+        raise RuntimeError('JWT_SECRET must be configured in the Vercel project environment.')
+    SECRET = secrets.token_urlsafe(48)
 DEMO = os.getenv('DEMO_MODE', 'false').lower() == 'true'
 passwords = PasswordHash.recommended()
 
 @app.middleware('http')
 async def same_origin(request: Request, call_next):
+    path = request.scope['path']
+    if path == '/api' or path.startswith('/api/'):
+        request.scope['path'] = path[4:] or '/'
+        raw_path = request.scope.get('raw_path')
+        if raw_path and raw_path.startswith(b'/api'):
+            request.scope['raw_path'] = raw_path[4:] or b'/'
     origin = request.headers.get('origin')
     if request.method not in ('GET', 'HEAD', 'OPTIONS') and origin and origin not in origins:
         from fastapi.responses import JSONResponse
@@ -65,6 +79,9 @@ def write_lock(db):
     db.rollback()
     if db.bind.dialect.name == 'sqlite': db.execute(text('BEGIN IMMEDIATE'))
     else: db.execute(text('SELECT pg_advisory_xact_lock(170036)'))
+
+@app.get('/docs', include_in_schema=False)
+def api_docs(): return get_swagger_ui_html(openapi_url='./openapi.json', title=f'{app.title} - Swagger UI')
 
 @app.get('/health')
 def health(): return {'status': 'ok', 'demo_mode': DEMO, 'ai_enabled': False}
