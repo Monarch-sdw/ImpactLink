@@ -119,6 +119,30 @@ Open http://localhost:3000 and http://localhost:8000/docs. PostgreSQL data persi
 
 Docker and PostgreSQL integration are supplied but **not runtime-tested on this machine**. The SQLite transaction path is exercised by concurrency tests. For public deployment, disable demo access, use HTTPS with `COOKIE_SECURE=true`, configure trusted origins, provision an administrator through a controlled process, and add operational controls such as throttling and backups.
 
+## Deploy to Vercel
+
+The root `vercel.json` deploys two services in one Vercel project: `frontend` serves the public application at `/`, and `backend` handles public API requests under `/api/*`. The browser calls the same-origin API path, so the frontend service does not call the backend service directly and no service binding is needed. The FastAPI middleware removes the `/api` prefix before matching its existing routes. Local Next.js development keeps its `API_URL` rewrite; Vercel uses the top-level service rewrites instead.
+
+1. Import `Monarch-sdw/ImpactLink` into Vercel with the **repository root** as the project root.
+2. Provision a managed PostgreSQL database. Vercel's function filesystem is not durable; do not use the default SQLite URL for a deployed application.
+3. Set these project environment variables in Vercel:
+   - `DATABASE_URL`: the provider's connection URL in SQLAlchemy format, `postgresql+psycopg://...`.
+   - `JWT_SECRET`: a stable, randomly generated secret of at least 32 characters. The backend refuses to start on Vercel if this is missing.
+   - `COOKIE_SECURE=true`: require HTTPS for session cookies.
+   - `CORS_ORIGINS`: comma-separated allowed origins, including the production custom domain (for example, `https://impactlink.example`). Vercel preview deployment origins are also allowed automatically.
+   - `DEMO_MODE=true` only for a fictional public showcase; use `false` when demo-account access is not appropriate.
+4. Before first use, run Alembic migrations and, for a demo deployment, seed the database once using the **same** `DATABASE_URL` configured in Vercel. From `backend/`, with the backend dependencies installed and the database URL set:
+
+   ```powershell
+   python -m alembic upgrade head
+   python -m app.seed
+   ```
+
+   For a non-demo deployment, run the migration but skip the seed command. Migrations and seeding are not run automatically by Vercel Functions.
+5. Deploy from Vercel or use `vercel dev` from the repository root to test the services and shared routing locally. On Windows, ensure a `python3` executable is on `PATH`; the Vercel Python service runner invokes `python3` directly.
+
+Vercel routes `/api/*` to the backend and all other paths to the frontend. The `/api` prefix is preserved by the service router and normalized by FastAPI middleware. No internal binding is configured because API requests enter through the public same-origin rewrite rather than a server-to-server call.
+
 ## Tests and checks
 
 ```powershell
@@ -143,4 +167,3 @@ Backend tests cover creation, exact/partial/multi-partner matching, no matches, 
 - Capacity represents a finite offered pool, not a recurring calendar inventory. Delivered capacity stays consumed. Greedy allocation is deterministic, not a global optimization across projects.
 - Suggested-match statistics count saved unique recommendation pairs, including historical ones; they are never reported as partnerships. Beneficiary verification means a stored manual attestation, and demo attestations remain fictional.
 - No production-scale pagination, volunteer-level scheduling, or automated document-verification workflow.
-

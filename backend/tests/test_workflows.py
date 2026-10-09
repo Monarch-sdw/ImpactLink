@@ -35,6 +35,14 @@ def project_payload(quantity=20,kind='Volunteers',unit='people',spec=None):
 def offer_payload(quantity=15,kind='Volunteers',unit='people',spec=None):
     return dict(resource_type=kind,total_capacity=quantity,unit=unit,specifications=spec or [],available_start=str(date.today()),available_end=str(date.today()+timedelta(days=60)),location='Hyderabad',latitude=17.385,longitude=78.486,service_radius=50,remote=False)
 
+def test_vercel_api_prefix_is_normalized():
+    client=TestClient(app)
+    response=client.get('/api/health')
+    assert response.status_code==200
+    assert response.json()['status']=='ok'
+    assert "url: './openapi.json'" in client.get('/api/docs').text
+    assert client.get('/api/openapi.json').status_code==200
+
 def make(client,quantity=20,offer_qty=15):
     ngo=client(1);con=client(2)
     p=ngo.post('/projects',json=project_payload(quantity)).json();o=con.post('/offers',json=offer_payload(offer_qty)).json()
